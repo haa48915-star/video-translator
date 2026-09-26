@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>جسر — ترجمة الفيديو</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Space+Mono:wght@400;700&display=swap');
+
+  :root{
+    --ink:#16181d;
+    --paper:#eae6dd;
+    --gold:#b8873a;
+    --panel:#1c1f26;
+    --line:#2a2d34;
+    --muted:#7d8290;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;min-height:100%;}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Space Mono',monospace;
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+  }
+
+  header{
+    padding:28px clamp(16px,5vw,48px) 10px;
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom:1px solid var(--line);
+  }
+  .brand{ font-family:'Amiri',serif; font-size:clamp(22px,4vw,30px); }
+  .brand b{ color:var(--gold); font-weight:700; }
+  .tagline{ font-size:11px; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; }
+
+  main{
+    flex:1;
+    max-width:900px;
+    width:100%;
+    margin:0 auto;
+    padding:clamp(20px,4vw,40px);
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+
+  .dropzone{
+    border:1.5px dashed var(--line);
+    border-radius:4px;
+    padding:32px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+    color:var(--muted);
+  }
+  .dropzone:hover, .dropzone.drag{ border-color:var(--gold); background:rgba(184,135,58,0.06); color:var(--paper); }
+  .dropzone input{ display:none; }
+  .dropzone .hint{ font-size:11px; margin-top:6px; }
+
+  .video-wrap{
+    position:relative;
+    background:#000;
+    border-radius:4px;
+    overflow:hidden;
+    display:none;
+  }
+  .video-wrap.show{ display:block; }
+  video{ width:100%; display:block; max-height:480px; }
+
+  .caption-overlay{
+    position:absolute;
+    left:5%; right:5%;
+    bottom:6%;
+    text-align:center;
+    pointer-events:none;
+  }
+  .caption-overlay span{
+    background:rgba(0,0,0,0.72);
+    color:#fff;
+    font-family:'Amiri',serif;
+    font-size:clamp(18px,3vw,26px);
+    padding:6px 16px;
+    border-radius:3px;
+    box-decoration-break:clone;
+    -webkit-box-decoration-break:clone;
+    line-height:1.7;
+  }
+
+  .controls{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  button{
+    font-family:'Space Mono',monospace;
+    background:var(--gold);
+    color:var(--ink);
+    border:none;
+    padding:12px 22px;
+    border-radius:3px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    letter-spacing:0.5px;
+  }
+  button:disabled{ background:#4a4d55; color:#8a8d94; cursor:not-allowed; }
+  button.secondary{ background:transparent; color:var(--gold); border:1px solid var(--gold); }
+  button:focus-visible{ outline:2px solid var(--gold); outline-offset:2px; }
+
+  .status-panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:16px 20px;
+    font-size:13px;
+    display:none;
+  }
+  .status-panel.show{ display:block; }
+  .status-line{ color:var(--muted); margin-bottom:8px; display:flex; justify-content:space-between; }
+  .status-line b{ color:var(--paper); font-weight:400; }
+  .progress-track{
+    height:6px; background:#2a2d34; border-radius:3px; overflow:hidden;
+  }
+  .progress-fill{
+    height:100%; background:var(--gold); width:0%; transition:width .2s ease;
+  }
+
+  .transcript{
+    display:none;
+    flex-direction:column;
+    gap:0;
+    max-height:280px;
+    overflow-y:auto;
+    border:1px solid var(--line);
+    border-radius:4px;
+  }
+  .transcript.show{ display:flex; }
+  .cue{
+    padding:12px 16px;
+    border-bottom:1px solid var(--line);
+    cursor:pointer;
+  }
+  .cue:hover{ background:rgba(184,135,58,0.08); }
+  .cue:last-child{ border-bottom:none; }
+  .cue .time{ font-size:10px; color:var(--muted); direction:ltr; display:block; text-align:left; }
+  .cue .ar{ font-family:'Amiri',serif; font-size:19px; direction:rtl; margin-top:4px; }
+  .cue .orig{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .cue.active{ background:rgba(184,135,58,0.15); border-inline-start:3px solid var(--gold); }
+
+  footer{
+    text-align:center; padding:14px; font-size:11px; color:var(--muted);
+    border-top:1px solid var(--line);
+  }
+  footer a{ color:var(--gold); text-decoration:none; }
+</style>
+</head>
+<body>
+
+<header dir="ltr">
+  <div class="brand"><b>جسر</b> · Video</div>
+  <div class="tagline">Auto captions · Whisper in-browser</div>
+</header>
+
+<main>
+  <label class="dropzone" id="dropzone">
+    <input type="file" id="fileInput" accept="video/*">
+    <div id="dropzoneText">اسحب ملف فيديو هنا أو اضغط للاختيار</div>
+    <div class="hint">كل المعالجة تتم داخل متصفحك — لا يُرفع أي ملف لأي سيرفر</div>
+    <div class="hint">الحد الأقصى لحجم الملف 150 ميقابايت — الفيديوهات الطويلة تستغرق وقتاً أطول في المعالجة</div>
+  </label>
+
+  <div class="video-wrap" id="videoWrap">
+    <video id="videoEl" controls></video>
+    <div class="caption-overlay" id="captionOverlay"></div>
+  </div>
+
+  <div class="controls">
+    <button id="runBtn" disabled>استخراج الكلام وترجمته</button>
+    <button id="downloadBtn" class="secondary" style="display:none;">تنزيل الترجمة (VTT)</button>
+  </div>
+
+  <div class="status-panel" id="statusPanel">
+    <div class="status-line"><span id="statusText">جاهز</span><b id="statusPct"></b></div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="transcript" id="transcript"></div>
+</main>
+
+<footer>
+  Whisper (Xenova/whisper-tiny.en) يعمل محلياً عبر transformers.js · ترجمة النص عبر MyMemory API
+</footer>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+env.allowLocalModels = false;
+
+const dropzone = document.getElementById('dropzone');
+const dropzoneText = document.getElementById('dropzoneText');
+const fileInput = document.getElementById('fileInput');
+const videoWrap = document.getElementById('videoWrap');
+const videoEl = document.getElementById('videoEl');
+const captionOverlay = document.getElementById('captionOverlay');
+const runBtn = document.getElementById('runBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const statusPanel = document.getElementById('statusPanel');
+const statusText = document.getElementById('statusText');
+const statusPct = document.getElementById('statusPct');
+const progressFill = document.getElementById('progressFill');
+const transcriptEl = document.getElementById('transcript');
+
+let currentFile = null;
+let cues = []; // {start, end, orig, ar}
+const MAX_FILE_SIZE_BYTES = 150 * 1024 * 1024; // 150 ميقابايت
+
+function setStatus(text, pct){
+  statusPanel.classList.add('show');
+  statusText.textContent = text;
+  if(pct !== undefined){
+    statusPct.textContent = Math.round(pct) + '%';
+    progressFill.style.width = Math.min(100, pct) + '%';
+  } else {
+    statusPct.textContent = '';
+  }
+}
+
+// يعرض عدّاد ثوانٍ حي أثناء أي خطوة تستغرق وقتاً بدون تقدّم حقيقي (فك الصوت، كل جزء من التفريغ)
+// حتى لا تبدو الواجهة متجمدة على الجوال إذا طالت المعالجة. استدعِ الدالة المُرجعة لإيقافه.
+function startElapsedTimer(label, pct){
+  setStatus(label, pct);
+  const t0 = Date.now();
+  const id = setInterval(() => {
+    const secs = Math.floor((Date.now() - t0) / 1000);
+    setStatus(label + ' — ' + secs + ' ثانية', pct);
+  }, 1000);
+  return () => clearInterval(id);
+}
+
+fileInput.addEventListener('change', (e) => {
+  if(e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+});
+['dragover','dragenter'].forEach(ev => dropzone.addEventListener(ev, (e) => {
+  e.preventDefault(); dropzone.classList.add('drag');
+}));
+['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, (e) => {
+  e.preventDefault(); dropzone.classList.remove('drag');
+}));
+dropzone.addEventListener('drop', (e) => {
+  if(e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+function loadFile(file){
+  if(file.size > MAX_FILE_SIZE_BYTES){
+    setStatus('حجم الملف (' + (file.size/(1024*1024)).toFixed(1) + ' ميقابايت) يتجاوز الحد الأقصى المسموح به وهو 150 ميقابايت. رجاءً اختر ملفاً أصغر.', undefined);
+    fileInput.value = '';
+    return;
+  }
+  currentFile = file;
+  videoEl.src = URL.createObjectURL(file);
+  videoWrap.classList.add('show');
+  dropzoneText.textContent = file.name;
+  runBtn.disabled = false;
+  cues = [];
+  transcriptEl.classList.remove('show');
+  transcriptEl.innerHTML = '';
+  downloadBtn.style.display = 'none';
+
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(isMobile && file.size > 30 * 1024 * 1024){
+    setStatus('ملاحظة: خلّي شاشة الجوال شغّالة والمتصفح بالواجهة الأمامية طول وقت المعالجة (لا تقفلها ولا تبدّل تطبيق)، والملفات الطويلة تاخذ وقتاً أطول على الجوال.', undefined);
+  }
+}
+
+videoEl.addEventListener('timeupdate', () => {
+  const t = videoEl.currentTime;
+  const cue = cues.find(c => t >= c.start && t <= c.end);
+  captionOverlay.innerHTML = (cue && cue.ar) ? `<span>${cue.ar}</span>` : '';
+  document.querySelectorAll('.cue').forEach(el => el.classList.remove('active'));
+  if(cue){
+    const idx = cues.indexOf(cue);
+    const el = document.getElementById('cue-' + idx);
+    if(el) el.classList.add('active');
+  }
+});
+
+async function extractAudio16k(file){
+  const arrayBuffer = await file.arrayBuffer();
+  const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * 16000), 16000);
+  const source = offlineCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineCtx.destination);
+  source.start();
+  const rendered = await offlineCtx.startRendering();
+  return rendered.getChannelData(0);
+}
+
+async function translateChunk(text){
+  if(!text || !text.trim()) return '';
+  try{
+    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=en|ar';
+    const res = await fetch(url);
+    const data = await res.json();
+    return (data && data.responseData && data.responseData.translatedText) ? data.responseData.translatedText : '';
+  } catch(err){
+    return '';
+  }
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+function renderTranscript(){
+  transcriptEl.innerHTML = '';
+  transcriptEl.classList.add('show');
+  cues.forEach((c, i) => {
+    const div = document.createElement('div');
+    div.className = 'cue';
+    div.id = 'cue-' + i;
+    div.innerHTML = `<span class="time">${c.start.toFixed(1)}s → ${c.end.toFixed(1)}s</span>
+      <div class="ar">${c.ar || '...'}</div>
+      <div class="orig">${c.orig}</div>`;
+    div.addEventListener('click', () => { videoEl.currentTime = c.start; videoEl.play(); });
+    transcriptEl.appendChild(div);
+  });
+}
+
+function toVTT(){
+  const fmt = (s) => {
+    const h = String(Math.floor(s/3600)).padStart(2,'0');
+    const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+    const sec = (s%60).toFixed(3).padStart(6,'0');
+    return `${h}:${m}:${sec}`;
+  };
+  let out = 'WEBVTT\n\n';
+  cues.forEach((c,i) => {
+    out += `${i+1}\n${fmt(c.start)} --> ${fmt(c.end)}\n${c.ar || c.orig}\n\n`;
+  });
+  return out;
+}
+
+downloadBtn.addEventListener('click', () => {
+  const blob = new Blob([toVTT()], {type:'text/vtt'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'arabic-subtitles.vtt';
+  a.click();
+});
+
+runBtn.addEventListener('click', async () => {
+  if(!currentFile) return;
+  runBtn.disabled = true;
+  downloadBtn.style.display = 'none';
+  cues = [];
+
+  try{
+    setStatus('جاري تحميل نموذج التعرف على الكلام (أول مرة فقط)...', 0);
+    const transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
+      progress_callback: (data) => {
+        if(data.status === 'progress' && data.total){
+          setStatus('تحميل النموذج: ' + (data.file || ''), (data.loaded / data.total) * 100);
+        }
+      }
+    });
+
+    let stopTimer = startElapsedTimer('جاري استخراج الصوت من الفيديو', 0);
+    const audioData = await extractAudio16k(currentFile);
+    stopTimer();
+
+    // نفرّغ الصوت على أجزاء قصيرة (20 ثانية) بدل استدعاء واحد طويل على كامل الفيديو،
+    // عشان تتحدث الشاشة بعد كل جزء وما توحي إنها متجمدة لو طوّل الفيديو أو كان الجهاز جوال بطيء
+    const CHUNK_SECONDS = 20;
+    const SAMPLE_RATE = 16000;
+    const chunkSamples = CHUNK_SECONDS * SAMPLE_RATE;
+    const totalSamples = audioData.length;
+    const numChunks = Math.max(1, Math.ceil(totalSamples / chunkSamples));
+
+    const segments = [];
+    for(let i=0; i<numChunks; i++){
+      const startSample = i * chunkSamples;
+      const endSample = Math.min(startSample + chunkSamples, totalSamples);
+      const chunkAudio = audioData.subarray(startSample, endSample);
+      const offsetSeconds = startSample / SAMPLE_RATE;
+      const label = 'جاري تفريغ الكلام (الجزء ' + (i+1) + ' من ' + numChunks + ')';
+
+      const stopChunkTimer = startElapsedTimer(label, (i/numChunks)*100);
+      let chunkOutput;
+      try{
+        chunkOutput = await transcriber(chunkAudio, { return_timestamps: true });
+      } finally {
+        stopChunkTimer();
+      }
+      setStatus(label, ((i+1)/numChunks)*100);
+
+      const pieces = (chunkOutput.chunks && chunkOutput.chunks.length) ? chunkOutput.chunks : [
+        { text: chunkOutput.text, timestamp: [0, (endSample-startSample)/SAMPLE_RATE] }
+      ];
+      pieces.forEach(p => {
+        const text = (p.text || '').trim();
+        if(!text) return;
+        const start = (p.timestamp[0] ?? 0) + offsetSeconds;
+        const end = (p.timestamp[1] ?? ((p.timestamp[0] ?? 0) + 4)) + offsetSeconds;
+        segments.push({ start, end, text });
+      });
+    }
+
+    setStatus('جاري ترجمة الجمل إلى العربية...', 0);
+    for(let i=0; i<segments.length; i++){
+      const seg = segments[i];
+      const ar = await translateChunk(seg.text);
+      cues.push({ start: seg.start, end: seg.end, orig: seg.text, ar });
+      setStatus('جاري ترجمة الجمل إلى العربية... (' + (i+1) + '/' + segments.length + ')', ((i+1)/segments.length)*100);
+      renderTranscript();
+      await sleep(250);
+    }
+
+    setStatus('تم! شغّل الفيديو لمشاهدة الترجمة.', 100);
+    downloadBtn.style.display = 'inline-block';
+  } catch(err){
+    console.error(err);
+    setStatus('حدث خطأ: ' + err.message, undefined);
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+</script>
+
+</body>
+</html>
